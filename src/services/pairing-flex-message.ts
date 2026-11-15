@@ -27,6 +27,12 @@ function createHourBubble(
   hour: PairingResult["hours"][number] | null,
   hourNumber: number,
 ): LineFlexBubble {
+  const hourAssignedMembers = hour
+    ? new Set([
+      ...hour.courts.flatMap((court) => court.paireds.flatMap((pair) => pair.map(({ id }) => id))),
+      ...hour.unassignedPairs.flatMap((pair) => pair.map(({ id }) => id)),
+    ]).size
+    : assignedMembers;
   const headerText = hour
     ? `${result.title}\nรอบ ${hour.startTime}–${hour.endTime}`
     : result.title;
@@ -34,7 +40,7 @@ function createHourBubble(
     {
       type: "text",
       text: hour
-        ? `${result.mode === "separate" ? "แยกคอร์ด" : "รวมคอร์ด"} · รอบ ${hourNumber}/${result.hours.length} · ${assignedMembers} คน`
+        ? `${result.mode === "separate" ? "แยกคอร์ด" : "รวมคอร์ด"} · รอบ ${hourNumber}/${result.hours.length} · ${hourAssignedMembers} คน`
         : "ไม่มีช่วงเวลาที่สนามเปิดครบหนึ่งชั่วโมง",
       size: "sm",
       color: "#64748B",
