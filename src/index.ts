@@ -12,8 +12,12 @@ export const app = new Elysia({ adapter: CloudflareAdapter })
   .post(
     "/pairings/parse",
     ({ body, set }) => {
+      const startedAt = Date.now();
       const result = parsePairingAnnouncement(body.text);
-      if (!result.ok) set.status = 400;
+      if (!result.ok) {
+        set.status = 400;
+      }
+      logApiResponse("/pairings/parse", result.ok ? 200 : 400, Date.now() - startedAt);
       return result;
     },
     { body: t.Object({ text: t.String({ minLength: 1 }) }) },
@@ -21,9 +25,11 @@ export const app = new Elysia({ adapter: CloudflareAdapter })
   .post(
     "/webhook/line",
     async ({ body, request, set }) => {
+      const startedAt = Date.now();
       const channelSecret = env.LINE_CHANNEL_SECRET;
       if (!channelSecret) {
         set.status = 503;
+        logApiError("/webhook/line", 503, "missing_channel_secret");
         return { ok: false, error: "LINE_CHANNEL_SECRET is not configured" };
       }
 
@@ -34,6 +40,7 @@ export const app = new Elysia({ adapter: CloudflareAdapter })
       );
       if (!valid) {
         set.status = 401;
+        logApiError("/webhook/line", 401, "invalid_signature");
         return { ok: false, error: "Invalid LINE webhook signature" };
       }
 
@@ -42,11 +49,13 @@ export const app = new Elysia({ adapter: CloudflareAdapter })
         payload = JSON.parse(body);
       } catch {
         set.status = 400;
+        logApiError("/webhook/line", 400, "invalid_json");
         return { ok: false, error: "Invalid JSON body" };
       }
 
       if (!isLineWebhookBody(payload)) {
         set.status = 400;
+        logApiError("/webhook/line", 400, "invalid_payload");
         return { ok: false, error: "Invalid LINE webhook payload" };
       }
       const results = await Promise.all(payload.events.map(async (event) => {
@@ -63,17 +72,24 @@ export const app = new Elysia({ adapter: CloudflareAdapter })
           return { status: "ignored", reason: "unsupported_command" } as const;
         }
         if (!event.replyToken) {
+          logApiError("/webhook/line", 502, "missing_reply_token");
           return { status: "reply_failed", error: "Webhook event has no reply token" } as const;
         }
 
         const reply = await replyToLineMessage(
           event.replyToken,
           processed.messages,
-          "a1m5wzAUU69mXJ6hk/60xG1Faea/NgDRGPU1p1WT3glNSwSmUSQWnW6wdVunLMdpKyBOOcaVak9iKglsePDAiuIuPjwqn+oCSOVA4Tfy5ZsE5CuYRaVPJLqAAHJ/Ahtu9E6SCNKpWOBhUIbncr8jCgdB04t89/1O/w1cDnyilFU=",
+          env.LINE_CHANNEL_ACCESS_TOKEN,
         );
-        if (!reply.ok) console.error("LINE reply failed", reply.status, reply.error);
+        if (!reply.ok) console.error(JSON.stringify({
+          level: "error",
+          event: "line.reply.failed",
+          status: reply.status,
+          error: reply.error,
+        }));
         return { status: reply.ok ? "replied" : "reply_failed", reply } as const;
       }));
+      logApiResponse("/webhook/line", 200, Date.now() - startedAt);
       return { ok: true, results };
     },
     { parse: "text", body: t.String({ minLength: 1 }) },
@@ -96,6 +112,14 @@ type LineWebhookBody = {
     };
   }>;
 };
+
+function logApiResponse(route: string, status: number, durationMs: number): void {
+  console.info(JSON.stringify({ level: "info", event: "api.response", route, status, durationMs }));
+}
+
+function logApiError(route: string, status: number, reason: string): void {
+  console.error(JSON.stringify({ level: "error", event: "api.error", route, status, reason }));
+}
 
 function isLineWebhookBody(value: unknown): value is LineWebhookBody {
   if (typeof value !== "object" || value === null || !("events" in value)) return false;
