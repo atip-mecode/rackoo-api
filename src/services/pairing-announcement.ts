@@ -18,15 +18,12 @@ const compactCourt = /(?=สนาม[^\n]*?\d{1,2}[.:]\d{2}\s*-\s*\d{1,2}[.:]\d
 /** Parse court announcements, including chat text pasted without line breaks. */
 export function parsePairingAnnouncement(input: string): ParseResult {
   const lines = splitAnnouncement(input);
-  let title = "";
+  const title = lines[0] ?? "";
   const courts: AnnouncementCourt[] = [];
   const members: AnnouncementMember[] = [];
+  let lastCourtLineIndex = -1;
 
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (!title) title = line;
-
+  for (const [index, line] of lines.entries()) {
     const court = line.match(courtLine);
     if (court) {
       const start = parseTime(court[2]);
@@ -39,10 +36,16 @@ export function parsePairingAnnouncement(input: string): ParseResult {
         endHour: end.hour,
         endMinute: end.minute,
       });
+      lastCourtLineIndex = index;
       continue;
     }
 
     if (line.startsWith("สนาม")) return invalidTime(line);
+  }
+
+  if (courts.length === 0) return { ok: false, error: { code: "MISSING_COURTS" } };
+
+  for (const line of lines.slice(lastCourtLineIndex + 1)) {
     if (line.includes("@All") || line.includes("@all")) continue;
 
     const range = line.match(/(\d{1,2}[.:]\d{2})\s*-\s*(\d{1,2}[.:]\d{2})/u);
@@ -78,7 +81,6 @@ export function parsePairingAnnouncement(input: string): ParseResult {
     });
   }
 
-  if (courts.length === 0) return { ok: false, error: { code: "MISSING_COURTS" } };
   return { ok: true, value: { title, courts, members } };
 }
 
