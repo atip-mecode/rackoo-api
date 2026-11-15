@@ -9,6 +9,7 @@ import { processMessage } from "./services/process-message";
 import { replyToLineMessage } from "./services/line-messaging-api";
 
 export const app = new Elysia({ adapter: CloudflareAdapter })
+  .get('/',()=>"hi visitor")
   .get("/health", () => ({ status: "ok" }))
   .post(
     "/pairings/parse",
