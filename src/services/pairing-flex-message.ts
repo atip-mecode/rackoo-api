@@ -1,5 +1,5 @@
 import type { PairingResult } from "../dto/pairing-result";
-import type { LineFlexMessage } from "../dto/line-message";
+import type { LineFlexBubble, LineFlexMessage } from "../dto/line-message";
 
 export function createPairingFlexMessage(result: PairingResult): LineFlexMessage {
   const assignedMembers = new Set(
@@ -8,89 +8,112 @@ export function createPairingFlexMessage(result: PairingResult): LineFlexMessage
       ...hour.unassignedPairs.flatMap((pair) => pair.map(({ id }) => id)),
     ]),
   ).size;
-  const contents = result.hours.length === 0
-    ? [{ type: "text" as const, text: "ไม่มีรอบที่สนามเปิดครบหนึ่งชั่วโมง", size: "sm" as const, wrap: true as const }]
-    : result.hours.flatMap((hour) => {
-      const centralWaitingPairs = result.mode === "combined" ? hour.unassignedPairs : [];
-      return [
-        { type: "separator" as const },
-        { type: "text" as const, text: `🕒  รอบ ${hour.startTime}–${hour.endTime}`, weight: "bold" as const, size: "md" as const, color: "#1E3A8A" },
-        ...hour.courts.flatMap((court) => {
-          const courtWaitingPairs = result.mode === "separate" ? court.paireds.slice(2) : [];
-          return [
-            { type: "separator" as const },
-            {
-              type: "text" as const,
-              text: `🏸  สนาม ${court.courtName}`,
-              weight: "bold" as const,
-              size: "md" as const,
-              color: "#2453E8",
-              wrap: true as const,
-            },
-            {
-              type: "text" as const,
-              text: formatCourtPairs(court.paireds.slice(0, 2)),
-              size: "sm" as const,
-              color: "#1F2937",
-              wrap: true as const,
-            },
-            ...(courtWaitingPairs.length === 0
-              ? []
-              : [{
-                type: "text" as const,
-                text: `⏳  รอคิว\n${formatPairs(courtWaitingPairs)}`,
-                size: "sm" as const,
-                wrap: true as const,
-                color: "#B45309",
-              }]),
-          ];
-        }),
-        ...(centralWaitingPairs.length === 0
-          ? []
-          : [{
-            type: "text" as const,
-            text: `⏳  รอคิวรวม\n${formatPairs(centralWaitingPairs)}`,
-            size: "sm" as const,
-            wrap: true as const,
-            color: "#B45309",
-          }]),
-      ];
-    });
+  const bubbles = result.hours.length === 0
+    ? [createHourBubble(result, assignedMembers, null, 0)]
+    : result.hours.map((hour, index) => createHourBubble(result, assignedMembers, hour, index + 1));
 
   return {
     type: "flex",
     altText: `ผลจับคู่ ${assignedMembers} คน ${result.hours.length} รอบ`,
-    contents: {
-      type: "bubble",
-      size: "giga",
-      header: {
-        type: "box",
-        layout: "vertical",
-        backgroundColor: "#1E40AF",
-        contents: [{
+    contents: bubbles.length === 1
+      ? bubbles[0]
+      : { type: "carousel", contents: bubbles },
+  };
+}
+
+function createHourBubble(
+  result: PairingResult,
+  assignedMembers: number,
+  hour: PairingResult["hours"][number] | null,
+  hourNumber: number,
+): LineFlexBubble {
+  const headerText = hour
+    ? `${result.title}\nรอบ ${hour.startTime}–${hour.endTime}`
+    : result.title;
+  const bodyContents: LineFlexBubble["body"]["contents"] = [
+    {
+      type: "text",
+      text: hour
+        ? `${result.mode === "separate" ? "แยกคอร์ด" : "รวมคอร์ด"} · รอบ ${hourNumber}/${result.hours.length} · ${assignedMembers} คน`
+        : "ไม่มีช่วงเวลาที่สนามเปิดครบหนึ่งชั่วโมง",
+      size: "sm",
+      color: "#64748B",
+      wrap: true,
+    },
+  ];
+
+  if (hour) {
+    for (const court of hour.courts) {
+      const courtWaitingPairs = result.mode === "separate" ? court.paireds.slice(2) : [];
+      bodyContents.push(
+        { type: "separator" },
+        {
           type: "text",
-          text: result.title,
-          color: "#FFFFFF",
+          text: `🏸  สนาม ${court.courtName}`,
           weight: "bold",
-          size: "lg",
+          size: "md",
+          color: "#2453E8",
           wrap: true,
-        }],
-      },
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "md",
-        contents: [
-          { type: "text", text: `${result.mode === "separate" ? "แยกคอร์ด" : "รวมคอร์ด"} · จับคู่แล้ว ${assignedMembers} คน · ${result.hours.length} รอบ`, size: "sm", color: "#64748B" },
-          ...contents,
-        ],
-      },
+        },
+        {
+          type: "text",
+          text: formatCourtPairs(court.paireds.slice(0, 2)),
+          size: "sm",
+          color: "#1F2937",
+          wrap: true,
+        },
+      );
+
+      if (courtWaitingPairs.length > 0) {
+        bodyContents.push({
+          type: "text",
+          text: `⏳  รอคิว\n${formatPairs(courtWaitingPairs)}`,
+          size: "sm",
+          color: "#B45309",
+          wrap: true,
+        });
+      }
+    }
+
+    if (result.mode === "combined" && hour.unassignedPairs.length > 0) {
+      bodyContents.push({
+        type: "separator",
+      }, {
+        type: "text",
+        text: `⏳  รอคิวรวม\n${formatPairs(hour.unassignedPairs)}`,
+        size: "sm",
+        color: "#B45309",
+        wrap: true,
+      });
+    }
+  }
+
+  return {
+    type: "bubble",
+    size: "giga",
+    header: {
+      type: "box",
+      layout: "vertical",
+      backgroundColor: "#1E40AF",
+      contents: [{
+        type: "text",
+        text: headerText,
+        color: "#FFFFFF",
+        weight: "bold",
+        size: "lg",
+        wrap: true,
+      }],
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      contents: bodyContents,
     },
   };
 }
 
 function formatPairs(pairs: PairingResult["hours"][number]["unassignedPairs"]): string {
-  if (pairs.length === 0) return "ยังไม่มีคู่";
   return pairs.map((pair, index) => `${index + 1}. ${formatPair(pair)}`).join("\n");
 }
 
