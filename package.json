@@ -6,7 +6,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "playground": "tsx scripts/pairing-playground.ts",
-    "test": "tsx --test src/services/pairing-announcement.test.ts",
+    "test": "tsx --test src/services/pairing-announcement.test.ts src/services/pairing-flex-response.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

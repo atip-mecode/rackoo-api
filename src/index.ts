@@ -4,6 +4,7 @@ import { env } from "cloudflare:workers";
 import { botProperty } from "./config/bot";
 import { verifyLineSignature } from "./services/line-webhook";
 import { parsePairingAnnouncement } from "./services/pairing-announcement";
+import { createPairingFlexResponse } from "./services/pairing-flex-response";
 import { processMessage } from "./services/process-message";
 import { replyToLineMessage } from "./services/line-messaging-api";
 
@@ -21,6 +22,27 @@ export const app = new Elysia({ adapter: CloudflareAdapter })
       return result;
     },
     { body: t.Object({ text: t.String({ minLength: 1 }) }) },
+  )
+  .post(
+    "/pairings/flex-message",
+    ({ body, set }) => {
+      const startedAt = Date.now();
+      const result = createPairingFlexResponse(body.text, body.mode ?? "separate");
+      if (!result.ok) {
+        set.status = result.status;
+        logApiError("/pairings/flex-message", result.status, result.reason);
+        return result;
+      }
+
+      logApiResponse("/pairings/flex-message", 200, Date.now() - startedAt);
+      return result;
+    },
+    {
+      body: t.Object({
+        text: t.String({ minLength: 1 }),
+        mode: t.Optional(t.Union([t.Literal("separate"), t.Literal("combined")])),
+      }),
+    },
   )
   .post(
     "/webhook/line",
